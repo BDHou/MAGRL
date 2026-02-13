@@ -10,7 +10,7 @@ import pandapower as pp
 @dataclass
 class RiskConfig:
     #第一类风险风险：contingency（故障/跳闸事件）
-    enable_contingency: bool = False False：#不启用这类风险，True：启用“随机跳闸/故障”事件
+    enable_contingency: bool = False  #False：不启用这类风险，True：启用“随机跳闸/故障”事件
     contingency_type: str = "n-1"          # "n-1" | "n-k"
     # N-1：系统里有 N 个关键设备（比如线路），随机掉 1 个（模拟单点故障）
 	# N-k：随机掉 k 个（更严重、更极端）
