@@ -14,3 +14,7 @@ dataset generation instructions：
 目前使用的是：
 python -m scenario.run_generate --mode risk --seed 1
 ython -m scenario.run_generate --mode base --seed 1 
+
+
+online点火测试：
+python -m scenario.smoke_test_online
