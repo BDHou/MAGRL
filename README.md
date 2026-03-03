@@ -1,6 +1,7 @@
 # MAGRL
 
-dataset generation instructions：
+
+dataset generation instructions： #旧版，暂时不需要，直接跑 rollout，见后面
 生成dataset，命令行参数：
 # --mode：
 # base：正常场景（无风险事件）
