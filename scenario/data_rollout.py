@@ -128,7 +128,7 @@ class PowerGraphDataset(InMemoryDataset):
     def __init__(self, root: str, transform=None, pre_transform=None):
         self.root_dir = root
         super().__init__(root=root, transform=transform, pre_transform=pre_transform)
-        self.data, self.slices = torch.load(self.processed_paths[0])
+        self.data, self.slices = torch.load(self.processed_paths[0], weights_only=False)
 
     @property
     def raw_file_names(self) -> List[str]:
@@ -154,7 +154,7 @@ class PowerGraphDataset(InMemoryDataset):
     @staticmethod
     def load_splits(root: str) -> Dict[str, List[int]]:
         path = os.path.join(root, "processed", "splits.pt")
-        return torch.load(path)
+        return torch.load(path, weights_only=False)
 
 
 # -----------------------------

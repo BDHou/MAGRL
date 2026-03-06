@@ -45,3 +45,13 @@ python -m train.supervised_pretrain --data_root data/offline_case33bw --epochs 2
 # 6) Ablation: tuned threshold vs fixed(0.5)
 python -m train.supervised_pretrain --data_root data/offline_case33bw --epochs 20 --batch_size 32 --device mps --thr_mode tuned --save_dir checkpoints/abl_thrtuned
 python -m train.supervised_pretrain --data_root data/offline_case33bw --epochs 20 --batch_size 32 --device mps --thr_mode fixed --thr_fixed 0.5 --save_dir checkpoints/abl_thrfixed
+
+
+RL训练：
+# 5个worker + 大batch（每iter采样更多数据，质量更高）
+python -m rl.train_rl \
+  --ckpt checkpoints/gnn_pretrain/best.pt \
+  --num_iters 200 \
+  --num_workers 5 \
+  --train_batch 2000 \
+  2>/dev/null

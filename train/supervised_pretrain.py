@@ -618,7 +618,7 @@ def main():
                 )
 
     # test best
-    ckpt = torch.load(best_path, map_location="cpu")
+    ckpt = torch.load(best_path, map_location="cpu", weights_only=False)
     model.load_state_dict(ckpt["model"])
     model.to(device)
     thresholds = ckpt.get("best_thresholds", best_thresholds)
