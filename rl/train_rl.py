@@ -311,8 +311,6 @@ def main():
             metrics_num_episodes_for_smoothing=100,
         )
     )
-    # 覆盖 logger_config 为 NoopLogger，彼底关闭旧日志输出
-    config.logger_config = {"type": "ray.tune.logger.NoopLogger"}
 
     algo = config.build_algo()
 
