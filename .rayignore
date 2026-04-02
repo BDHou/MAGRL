@@ -1,0 +1,12 @@
+.git/
+.vscode/
+.idea/
+logs/
+saved_models/
+tensorboard/
+experiment_logs/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+data/
+*.ipynb
