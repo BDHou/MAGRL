@@ -33,7 +33,7 @@ class MultiFeederStorageEnv(MultiAgentEnv):
         # ==========================================
         # 1. 组装各组件
         # ==========================================
-        net_path = os.path.join(data_path, 'generated', 'topology', '20260320_test_data.p')
+        net_path = os.path.join(data_path, 'generated', 'topology', 'ieee_env_topology.p')
         self.simulator = GridSimulator(net_path)
         self.data_mgr = TimeSeriesDataManager(data_path, self.simulator.num_loads)
         self.action_proc = ActionProcessor(

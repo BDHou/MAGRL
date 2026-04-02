@@ -3,7 +3,7 @@ from ray.tune.registry import register_env
 from src.envs.single_feeder_multi_agent_env import MultiFeederStorageEnv
 import os
 
-DATA_PATH = r'/Users/steven/Documents/GridProjects/YC2/data'  # CONF
+DATA_PATH = r'/Users/steven/Documents/GridProjects/MAGRL/data/generated'  # CONF
 
 def env_creator(env_config):
     return MultiFeederStorageEnv(env_config)
