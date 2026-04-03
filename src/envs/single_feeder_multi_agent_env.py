@@ -28,12 +28,12 @@ class MultiFeederStorageEnv(MultiAgentEnv):
     def __init__(self, env_config=None):
         super().__init__()
         env_config = env_config or {}
-        data_path = env_config.get('data_path', '/Users/steven/Documents/GridProjects/YC2/data')
+        data_path = env_config['data_path']
 
         # ==========================================
         # 1. 组装各组件
         # ==========================================
-        net_path = os.path.join(data_path, 'generated', 'topology', 'ieee_env_topology.p')
+        net_path = os.path.join(data_path, 'topology.p')
         self.simulator = GridSimulator(net_path)
         self.data_mgr = TimeSeriesDataManager(data_path, self.simulator.num_loads)
         self.action_proc = ActionProcessor(

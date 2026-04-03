@@ -14,7 +14,7 @@ from scenario.base_scenario import (
 
 def analyze_and_plot(load_p_matrix, original_load_count, out_dir, steps_per_day, T_total):
     import matplotlib.pyplot as plt
-    print("\n--- 📊 数据分析摘要 ---")
+    print("\n--- 数据分析摘要 ---")
     
     # 常规负荷部分 (用电)
     loads_p = load_p_matrix[:, :original_load_count]
@@ -55,9 +55,9 @@ def analyze_and_plot(load_p_matrix, original_load_count, out_dir, steps_per_day,
     plot_path = os.path.join(out_dir, "total_power_curve.png")
     plt.savefig(plot_path, dpi=150)
     plt.close()
-    print(f"\n✅ 数据时序分析图已保存至: {plot_path}")
+    print(f"\n 数据时序分析图已保存至: {plot_path}")
 
-def generate_ieee_env_data(feeder_name: str, out_dir: str, top_out_path: str, cfg: ScenarioConfig, seed: int = 42):
+def generate_ieee_env_data(feeder_name: str, out_dir: str, cfg: ScenarioConfig, seed: int = 42):
     """
     使用 pandapower 提供的 IEEE 标准网络，生成适用强化学习环境的拓扑和时序数据。
     完全不依赖私有的 .p 文件。
@@ -90,9 +90,9 @@ def generate_ieee_env_data(feeder_name: str, out_dir: str, top_out_path: str, cf
     print(f"Topology configured: {len(net.bus)} buses, {num_loads} loads (including {len(pv_buses)} PVs as negative loads), {len(net.storage)} storages.")
     
     # 保存专用的环境拓扑文件
-    os.makedirs(os.path.dirname(top_out_path), exist_ok=True)
-    pp.to_pickle(net, top_out_path)
-    print(f"Environment logic topology successfully explicitly saved to: {top_out_path}")
+    os.makedirs(out_dir, exist_ok=True)
+    pp.to_pickle(net, os.path.join(out_dir, 'topology.p'))
+    print(f"Environment logic topology successfully explicitly saved to: {os.path.join(out_dir, 'topology')}")
     
     # 4. 生成时序负荷与光伏数据
     T_total = cfg.days * cfg.steps_per_day
@@ -165,7 +165,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--feeder", type=str, default="case33bw", help="IEEE 标准反馈线名字 (如 case33bw, case69, mv_oberrhein)")
     parser.add_argument("--out_dir", type=str, default="data/generated/load")
-    parser.add_argument("--top_out_path", type=str, default="data/generated/topology/ieee_env_topology.p")
     parser.add_argument("--days", type=int, default=30)
     parser.add_argument("--interval_min", type=int, default=15, help="生成数据的时间间隔 (分钟)")
     parser.add_argument("--seed", type=int, default=42, help="随机种子")
@@ -174,4 +173,4 @@ if __name__ == "__main__":
     steps_per_day = int((24 * 60) / args.interval_min)
     cfg = ScenarioConfig(days=args.days, steps_per_day=steps_per_day)
     
-    generate_ieee_env_data(args.feeder, args.out_dir, args.top_out_path, cfg, seed=args.seed)
+    generate_ieee_env_data(args.feeder, args.out_dir, cfg, seed=args.seed)

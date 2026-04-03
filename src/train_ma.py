@@ -3,12 +3,12 @@ from ray.tune.registry import register_env
 from src.envs.single_feeder_multi_agent_env import MultiFeederStorageEnv
 import os
 
-DATA_PATH = r'/Users/steven/Documents/GridProjects/MAGRL/data/generated'  # CONF
+DATA_PATH = r'/Users/steven/Documents/GridProjects/MAGRL/data/generated/ieee_case33bw'  # CONF
 
 def env_creator(env_config):
     return MultiFeederStorageEnv(env_config)
 
-def setup_registry(env_name="Yancheng_MARL_Feeder_v0"):
+def setup_registry(env_name="ieee_case33bw_MARL_Feeder_v0"):
     register_env(env_name, env_creator)
     return env_name
 

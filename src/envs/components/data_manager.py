@@ -17,12 +17,12 @@ class TimeSeriesDataManager:
         """
         # 加载负荷时序矩阵
         self.load_p = (
-            pd.read_csv(os.path.join(data_path, 'generated', 'load', 'load_p.csv'))
+            pd.read_csv(os.path.join(data_path, 'load_p.csv'))
             .drop(columns=['time'], errors='ignore')
             .values
         )
         self.load_q = (
-            pd.read_csv(os.path.join(data_path, 'generated', 'load', 'load_q.csv'))
+            pd.read_csv(os.path.join(data_path, 'load_q.csv'))
             .drop(columns=['time'], errors='ignore')
             .values
         )
