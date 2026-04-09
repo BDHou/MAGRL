@@ -236,3 +236,49 @@ def plot_evaluation(records: dict, baseline: dict = None, figsize=(16, 18)):
     plt.show()
 
     return fig
+
+
+if __name__ == "__main__":
+    import argparse
+    import os
+    from ray.rllib.algorithms.algorithm import Algorithm
+
+    parser = argparse.ArgumentParser(description="Evaluate MAPPO checkpoint")
+    parser.add_argument("checkpoint", type=str, help="checkpoint 目录路径 (包含 rllib_checkpoint.json)")
+    parser.add_argument("--save", type=str, default=None, help="保存图表到指定路径 (如 eval_result.png)")
+    parser.add_argument("--no-baseline", action="store_true", help="跳过 baseline 评估")
+    args = parser.parse_args()
+
+    DATA_PATH = '/Users/steven/Documents/GridProjects/MAGRL/data/generated/ieee_case33bw'
+    env_config = {"data_path": DATA_PATH}
+
+    # 注册环境
+    from ray.tune.registry import register_env
+    register_env("ieee_case33bw_MARL_Feeder_v0",
+                 lambda cfg: MultiFeederStorageEnv(cfg))
+
+    # 加载 checkpoint
+    checkpoint_path = os.path.abspath(args.checkpoint)
+    print(f"Loading checkpoint: {checkpoint_path}")
+    algo = Algorithm.from_checkpoint(checkpoint_path)
+    print("Checkpoint loaded successfully.")
+
+    # 运行评估
+    if not args.no_baseline:
+        print("\n--- Running baseline (no control) ---")
+        baseline = evaluate_baseline(env_config)
+    else:
+        baseline = None
+
+    print("\n--- Running RL policy ---")
+    records = evaluate_episode(algo, env_config)
+
+    # 绘图
+    fig = plot_evaluation(records, baseline=baseline)
+
+    if args.save:
+        save_path = os.path.abspath(args.save)
+        fig.savefig(save_path, dpi=150, bbox_inches='tight')
+        print(f"\nFigure saved to: {save_path}")
+
+    algo.stop()
