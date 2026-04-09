@@ -250,3 +250,6 @@ benchmark*
 # 加入白名单的notebook
 !notebooks/dev_pipeline/04_basic_mult_agent_env_test.ipynb
 !notebooks/dev_pipeline/05_ieee_nbus_base_scenario_creation.ipynb
+
+.cursor/
+.cursor/*

@@ -3,7 +3,8 @@ from ray.tune.registry import register_env
 from src.envs.single_feeder_multi_agent_env import MultiFeederStorageEnv
 import os
 
-DATA_PATH = r'/Users/steven/Documents/GridProjects/MAGRL/data/generated/ieee_case33bw'  # CONF
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+DATA_PATH = os.path.join(PROJECT_ROOT, "data", "generated", "ieee_case33bw")
 
 def env_creator(env_config):
     return MultiFeederStorageEnv(env_config)
@@ -12,7 +13,13 @@ def setup_registry(env_name="ieee_case33bw_MARL_Feeder_v0"):
     register_env(env_name, env_creator)
     return env_name
 
-def build_mappo_algo(env_name, learning_rate=5e-5, num_workers=2):
+def build_mappo_algo(
+    env_name,
+    learning_rate=5e-5,
+    num_workers=2,
+    train_batch_size=4000,
+    rollout_fragment_length=32,
+):
     # 临时实例化一个环境以获取其空间定义，供策略初始化使用
     temp_env = MultiFeederStorageEnv({"data_path": DATA_PATH})
     obs_space = temp_env.single_obs_space
@@ -40,11 +47,12 @@ def build_mappo_algo(env_name, learning_rate=5e-5, num_workers=2):
         .env_runners(
             num_env_runners=num_workers,
             num_envs_per_env_runner=1,
+            rollout_fragment_length=rollout_fragment_length,
         )
         .training(
             lr=learning_rate,
             gamma=0.99,
-            train_batch_size=4000,
+            train_batch_size=train_batch_size,
             model={
                 "fcnet_hiddens": [128, 128],    # 两层 128 维的隐藏层
                 "fcnet_activation": "relu",     # 激活函数 relu
@@ -164,10 +172,24 @@ if __name__ == "__main__":
     parser.add_argument("--iterations", type=int, default=50, help="训练迭代数 (default: 50)")
     parser.add_argument("--workers", type=int, default=2, help="并行 worker 数 (default: 2)")
     parser.add_argument("--lr", type=float, default=5e-5, help="学习率 (default: 5e-5)")
+    parser.add_argument("--train-batch-size", type=int, default=4000, help="每次迭代采样 batch 大小 (default: 4000)")
+    parser.add_argument("--rollout-fragment-length", type=int, default=32, help="每个 env runner 每次采样片段长度 (default: 32)")
     parser.add_argument("--checkpoint-freq", type=int, default=10, help="保存频率 (default: 10)")
+    parser.add_argument("--save-dir", type=str, default="saved_models", help="训练输出根目录 (default: saved_models)")
     args = parser.parse_args()
 
     env_name = setup_registry()
-    algo = build_mappo_algo(env_name, learning_rate=args.lr, num_workers=args.workers)
-    run_training(algo, iterations=args.iterations, checkpoint_freq=args.checkpoint_freq)
+    algo = build_mappo_algo(
+        env_name,
+        learning_rate=args.lr,
+        num_workers=args.workers,
+        train_batch_size=args.train_batch_size,
+        rollout_fragment_length=args.rollout_fragment_length,
+    )
+    run_training(
+        algo,
+        iterations=args.iterations,
+        checkpoint_freq=args.checkpoint_freq,
+        save_dir=args.save_dir,
+    )
     algo.stop()

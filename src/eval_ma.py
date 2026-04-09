@@ -249,7 +249,8 @@ if __name__ == "__main__":
     parser.add_argument("--no-baseline", action="store_true", help="跳过 baseline 评估")
     args = parser.parse_args()
 
-    DATA_PATH = '/Users/steven/Documents/GridProjects/MAGRL/data/generated/ieee_case33bw'
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    DATA_PATH = os.path.join(project_root, "data", "generated", "ieee_case33bw")
     env_config = {"data_path": DATA_PATH}
 
     # 注册环境

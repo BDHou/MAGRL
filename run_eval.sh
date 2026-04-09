@@ -20,5 +20,8 @@ fi
 eval "$(conda shell.bash hook)"
 conda activate yc_mamaskabledppo_env
 
-cd /Users/steven/Documents/GridProjects/MAGRL
-python -m src.eval_ma "$@"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$SCRIPT_DIR"
+
+cd "$PROJECT_ROOT"
+python -u -m src.eval_ma "$@"
