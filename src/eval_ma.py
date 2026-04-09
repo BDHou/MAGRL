@@ -1,6 +1,8 @@
 """
 Multi-agent model evaluation script.
 
+v2: 适配异构观测空间 (8维) 和 per-agent 奖励分解。
+
 Features:
   1. Run trained MAPPO policy on a full episode
   2. Run no-action baseline for comparison
@@ -42,12 +44,22 @@ def _record_step(records, env, step, reward_dict, info_dict, action_dict):
     """Record one step of metrics (shared by evaluate_episode and evaluate_baseline)."""
     records["steps"].append(step)
 
-    first_agent = env.possible_agents[0]
-    records["rewards"].append(reward_dict.get(first_agent, 0.0))
+    # v2: 记录所有智能体的平均奖励（per-agent 奖励的均值作为 episode 级指标）
+    agent_rewards = [reward_dict.get(aid, 0.0) for aid in env.possible_agents]
+    records["rewards"].append(float(np.mean(agent_rewards)))
 
+    # v2: 全局分量取第一个 agent 的 info（全局部分所有 agent 相同）
+    # 局部分量 (soc, action) 取所有 agent 的均值
+    first_agent = env.possible_agents[0]
     first_info = info_dict.get(first_agent, {})
-    for k in REWARD_KEYS:
-        records[k].append(first_info.get(k, 0.0))
+    records["reward_reverse"].append(first_info.get("reward_reverse", 0.0))
+    records["reward_buy"].append(first_info.get("reward_buy", 0.0))
+
+    # SOC 和 action 惩罚：取所有 agent 的均值
+    soc_penalties = [info_dict.get(aid, {}).get("reward_soc", 0.0) for aid in env.possible_agents]
+    action_penalties = [info_dict.get(aid, {}).get("reward_action", 0.0) for aid in env.possible_agents]
+    records["reward_soc"].append(float(np.mean(soc_penalties)))
+    records["reward_action"].append(float(np.mean(action_penalties)))
 
     for aid in env.possible_agents:
         idx = env._agent_to_idx[aid]
@@ -204,14 +216,14 @@ def plot_evaluation(records: dict, baseline: dict = None, figsize=(16, 18)):
     ax4.plot(hours, records["rewards"], 'purple', linewidth=1, alpha=0.7, label='RL Policy')
     ax4.fill_between(hours, 0, records["rewards"], alpha=0.2, color='purple')
     ax4.set_ylabel('Reward')
-    ax4.set_title('Total Step Reward')
+    ax4.set_title('Mean Agent Step Reward')
     ax4.legend(loc='upper right', fontsize=8)
     ax4.grid(True, alpha=0.3)
 
     # ---- Panel 5: Decomposed rewards ----
     ax5 = axes[4]
     colors = {'reward_reverse': 'red', 'reward_buy': 'orange', 'reward_soc': 'blue', 'reward_action': 'gray'}
-    labels = {'reward_reverse': 'R_reverse', 'reward_buy': 'R_buy', 'reward_soc': 'R_soc', 'reward_action': 'R_action'}
+    labels = {'reward_reverse': 'R_reverse', 'reward_buy': 'R_buy', 'reward_soc': 'R_soc (mean)', 'reward_action': 'R_action (mean)'}
     for k in REWARD_KEYS:
         ax5.plot(hours, records[k], label=labels[k], linewidth=1.2, color=colors[k])
     ax5.set_ylabel('Reward Component')

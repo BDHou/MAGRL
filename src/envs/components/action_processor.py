@@ -23,8 +23,11 @@ class ActionProcessor:
         self.soc = None
 
     def reset(self) -> None:
-        """重置所有储能 SOC 到 50%"""
-        self.soc = np.full(self.num_storages, 0.5, dtype=np.float32)
+        """
+        为每个储能独立地从 [0.2, 0.8] 均匀分布中随机采样初始 SOC。
+        不同的初始 SOC 是打破 Shared Policy 动作克隆的辅助手段之一。
+        """
+        self.soc = np.random.uniform(0.2, 0.8, size=self.num_storages).astype(np.float32)
 
     def apply(self, agent_idx: int, action_val: float, simulator) -> float:
         """

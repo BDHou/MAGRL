@@ -45,6 +45,10 @@ def build_mappo_algo(env_name, learning_rate=5e-5, num_workers=2):
             lr=learning_rate,
             gamma=0.99,
             train_batch_size=4000,
+            model={
+                "fcnet_hiddens": [128, 128],    # 两层 128 维的隐藏层
+                "fcnet_activation": "relu",     # 激活函数 relu
+            },
         )
     )
     return config.build()
@@ -67,7 +71,8 @@ def run_training(algo, iterations=50, checkpoint_freq=10, save_dir="saved_models
     from datetime import datetime
     from torch.utils.tensorboard import SummaryWriter
 
-    # Create timestamped run directory
+    # Create timestamped run directory (必须用绝对路径，否则新版 Ray/pyarrow 会报 URI scheme 错误)
+    save_dir = os.path.abspath(save_dir)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = os.path.join(save_dir, f"run_{timestamp}")
     os.makedirs(run_dir, exist_ok=True)
@@ -150,3 +155,19 @@ def run_training(algo, iterations=50, checkpoint_freq=10, save_dir="saved_models
     print(f"  TensorBoard: tensorboard --logdir {tb_dir}")
 
     return return_history, best_checkpoint_path, latest_checkpoint_path
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="MAPPO multi-agent training for MAGRL")
+    parser.add_argument("--iterations", type=int, default=50, help="训练迭代数 (default: 50)")
+    parser.add_argument("--workers", type=int, default=2, help="并行 worker 数 (default: 2)")
+    parser.add_argument("--lr", type=float, default=5e-5, help="学习率 (default: 5e-5)")
+    parser.add_argument("--checkpoint-freq", type=int, default=10, help="保存频率 (default: 10)")
+    args = parser.parse_args()
+
+    env_name = setup_registry()
+    algo = build_mappo_algo(env_name, learning_rate=args.lr, num_workers=args.workers)
+    run_training(algo, iterations=args.iterations, checkpoint_freq=args.checkpoint_freq)
+    algo.stop()

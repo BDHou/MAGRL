@@ -3,15 +3,21 @@ import numpy as np
 
 class RewardCalculator:
     """
-    Multi-objective reward calculator with decomposed sub-rewards.
+    Multi-objective reward calculator with per-agent decomposed sub-rewards.
+
+    v2: 奖励从单一全局标量改为每个智能体独立的总奖励。
+        全局分量 (R_reverse, R_buy) 所有智能体共享，
+        局部分量 (R_soc_i, R_action_i) 针对各智能体独立计算。
 
     Sub-rewards:
-      R_reverse: Reverse power penalty (quadratic) — core objective
-      R_buy:     Grid purchase penalty (linear) — incentivize discharge
-      R_soc:     SOC out-of-range soft penalty — safety constraint
-      R_action:  Action smoothness penalty — avoid erratic control
+      R_reverse: 倒送惩罚（二次） — 核心目标            (全局)
+      R_buy:     购电惩罚（线性） — 鼓励放电            (全局)
+      R_soc_i:   SOC 越界软惩罚  — 安全约束             (局部)
+      R_action_i:动作平滑惩罚    — 避免激进控制          (局部)
 
-    Total = w1*R_reverse + w2*R_buy + w3*R_soc + w4*R_action
+    符号约定 (与 GridSimulator.get_ext_grid_power 一致):
+      p_grid > 0 → 配网从主网买电
+      p_grid < 0 → 配网向主网倒送
     """
 
     DEFAULT_WEIGHTS = {
@@ -30,50 +36,69 @@ class RewardCalculator:
 
     def calculate(self, simulator, soc_values: np.ndarray, p_bat_values: list[float]) -> dict:
         """
-        Compute decomposed reward.
+        计算每个智能体的独立奖励。
 
         Args:
-            simulator: GridSimulator instance
-            soc_values: array of current SOC for all storages
+            simulator:    GridSimulator 实例
+            soc_values:   array of current SOC for all storages
             p_bat_values: list of actual battery power (MW) applied this step
 
         Returns:
-            dict with keys: total, reward_reverse, reward_buy, reward_soc,
-                            reward_action, p_grid_actual
+            dict with keys:
+              - per_agent_rewards: list[float], 每个智能体各自的总奖励
+              - reward_reverse:    float, 全局倒送惩罚 (共享)
+              - reward_buy:        float, 全局购电惩罚 (共享)
+              - reward_soc:        list[float], 各智能体的 SOC 惩罚
+              - reward_action:     list[float], 各智能体的动作惩罚
+              - p_grid_actual:     float, PCC 实际功率
         """
         p_grid = simulator.get_ext_grid_power()
+        num_agents = len(soc_values)
 
-        # R_reverse: quadratic penalty for reverse power flow
+        # ============================================================
+        # 全局共享分量
+        # ============================================================
+
+        # R_reverse: p_grid < 0 说明倒送，取绝对值的二次惩罚
         r_reverse = -(max(0.0, -p_grid) ** 2)
 
-        # R_buy: linear penalty for purchasing from grid
+        # R_buy: p_grid > 0 说明买电，线性惩罚
         r_buy = -(max(0.0, p_grid))
 
-        # R_soc: soft penalty outside [0.1, 0.9] safe zone
-        r_soc = 0.0
-        for soc in soc_values:
+        # 全局部分的加权和（所有智能体共享同一个值）
+        global_reward = self.w1 * r_reverse + self.w2 * r_buy
+
+        # ============================================================
+        # 局部独立分量（每个智能体各自计算）
+        # ============================================================
+        per_agent_rewards = []
+        reward_soc_list = []
+        reward_action_list = []
+
+        for i in range(num_agents):
+            # R_soc_i: 仅当该智能体的 SOC 超出 [0.1, 0.9] 时给予线性惩罚
+            r_soc_i = 0.0
+            soc = soc_values[i]
             if soc < 0.1:
-                r_soc += -((0.1 - soc) * 10.0)
+                r_soc_i = -((0.1 - soc) * 10.0)
             elif soc > 0.9:
-                r_soc += -((soc - 0.9) * 10.0)
+                r_soc_i = -((soc - 0.9) * 10.0)
 
-        # R_action: penalize large actions for smoothness
-        r_action = 0.0
-        for p in p_bat_values:
-            r_action += -abs(p)
+            # R_action_i: 针对该智能体的动作平滑惩罚
+            r_action_i = -abs(p_bat_values[i])
 
-        total = (
-            self.w1 * r_reverse
-            + self.w2 * r_buy
-            + self.w3 * r_soc
-            + self.w4 * r_action
-        )
+            # 该智能体的总奖励 = 全局共享 + 局部独立
+            total_i = global_reward + self.w3 * r_soc_i + self.w4 * r_action_i
+
+            per_agent_rewards.append(total_i)
+            reward_soc_list.append(r_soc_i)
+            reward_action_list.append(r_action_i)
 
         return {
-            "total": total,
+            "per_agent_rewards": per_agent_rewards,
             "reward_reverse": r_reverse,
             "reward_buy": r_buy,
-            "reward_soc": r_soc,
-            "reward_action": r_action,
+            "reward_soc": reward_soc_list,
+            "reward_action": reward_action_list,
             "p_grid_actual": p_grid,
         }
