@@ -14,7 +14,7 @@ from scripts.resource_injector import ResourceInjector
 
 def render_topology(net, resource_table, out_dir):
     """
-    渲染网络拓扑图，用 networkx 布局 + matplotlib 绘制，标注各类资源位置。
+    渲染网络拓扑图：用 pandapower 生成节点坐标，然后自定义绘制并标注各类资源。
 
     Args:
         net pp.pandapowerNet: 注入资源后的 pandapower 网络
@@ -25,30 +25,31 @@ def render_topology(net, resource_table, out_dir):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from matplotlib.lines import Line2D
-    import pandapower.topology as top
-    import networkx as nx
+    import pandapower.plotting as ppplot
 
-    type_colors = {
-        0: "#e74c3c",   # BESS - 红
-        1: "#2ecc71",   # Generator - 绿
-        2: "#f39c12",   # Inverter/PV - 橙
-        3: "#3498db",   # DR - 蓝
+    import json
+
+    ppplot.create_generic_coordinates(net, overwrite=True)
+
+    pos = {}
+    for idx, geo_str in net.bus["geo"].items():
+        if geo_str is not None and isinstance(geo_str, str):
+            coords = json.loads(geo_str)["coordinates"]
+            pos[int(idx)] = (coords[0], coords[1])
+
+    TYPE_COLORS = {
+        0: "#e74c3c",   # BESS - red
+        1: "#2ecc71",   # Generator - green
+        2: "#f39c12",   # Inverter/PV - orange
+        3: "#3498db",   # DR - blue
     }
-    type_labels = {
+    TYPE_LABELS = {
         0: "BESS",
         1: "Generator",
         2: "Inverter/PV",
         3: "Demand Response",
     }
 
-    # 构建 networkx 图并计算布局
-    G = top.create_nxgraph(net, respect_switches=True)
-    slack_bus = int(net.ext_grid.bus.iloc[0])
-
-    # Kamada-Kawai 布局，以 slack bus 为中心效果更好（树状辐射结构）
-    pos = nx.kamada_kawai_layout(G)
-
-    # 按资源类型分组母线
     resource_buses_by_type = {}
     if len(resource_table) > 0:
         for type_id, group in resource_table.groupby("type_id"):
@@ -57,72 +58,102 @@ def render_topology(net, resource_table, out_dir):
     all_resource_buses = set()
     for buses in resource_buses_by_type.values():
         all_resource_buses.update(buses)
-    plain_buses = [b for b in G.nodes() if b not in all_resource_buses
+
+    slack_bus = int(net.ext_grid.bus.iloc[0])
+    plain_buses = [b for b in pos if b not in all_resource_buses
                    and b != slack_bus]
 
     fig, ax = plt.subplots(figsize=(14, 10))
 
-    # 画边
-    nx.draw_networkx_edges(G, pos, ax=ax, edge_color="#bdc3c7",
-                           width=1.2, alpha=0.7)
+    for line_idx in net.line.index:
+        fb = int(net.line.at[line_idx, "from_bus"])
+        tb = int(net.line.at[line_idx, "to_bus"])
+        if fb not in pos or tb not in pos:
+            continue
+        in_service = bool(net.line.at[line_idx, "in_service"])
+        if in_service:
+            ax.plot([pos[fb][0], pos[tb][0]], [pos[fb][1], pos[tb][1]],
+                    color="#bdc3c7", linewidth=1.2, alpha=0.7, zorder=1)
+        else:
+            ax.plot([pos[fb][0], pos[tb][0]], [pos[fb][1], pos[tb][1]],
+                    color="#e74c3c", linewidth=1.0, alpha=0.5,
+                    linestyle="--", zorder=1)
 
-    # 普通母线
     if plain_buses:
-        nx.draw_networkx_nodes(G, pos, nodelist=plain_buses, ax=ax,
-                               node_color="#95a5a6", node_size=80, alpha=0.8)
+        xs = [pos[b][0] for b in plain_buses]
+        ys = [pos[b][1] for b in plain_buses]
+        ax.scatter(xs, ys, c="#95a5a6", s=60, alpha=0.8, zorder=2,
+                   edgecolors="white", linewidths=0.5)
 
-    # Slack bus
-    nx.draw_networkx_nodes(G, pos, nodelist=[slack_bus], ax=ax,
-                           node_color="#2c3e50", node_size=300,
-                           node_shape="s", edgecolors="black", linewidths=1.5)
+    ax.scatter([pos[slack_bus][0]], [pos[slack_bus][1]],
+               c="#2c3e50", s=250, marker="s", zorder=4,
+               edgecolors="black", linewidths=1.5)
     ax.annotate("Slack", pos[slack_bus],
                 textcoords="offset points", xytext=(0, 12),
                 fontsize=8, ha="center", fontweight="bold", color="#2c3e50")
 
-    # 资源母线（按类型颜色区分）
-    for type_id, buses in resource_buses_by_type.items():
-        valid_buses = [b for b in buses if b in pos]
-        if not valid_buses:
+    bus_types = {}
+    if len(resource_table) > 0:
+        for _, row in resource_table.iterrows():
+            b, tid = int(row["bus"]), int(row["type_id"])
+            bus_types.setdefault(b, [])
+            if tid not in bus_types[b]:
+                bus_types[b].append(tid)
+
+    for bus, types in bus_types.items():
+        if bus not in pos:
             continue
-        nx.draw_networkx_nodes(G, pos, nodelist=valid_buses, ax=ax,
-                               node_color=type_colors.get(type_id, "#7f8c8d"),
-                               node_size=200, edgecolors="black",
-                               linewidths=0.8)
-        for b in valid_buses:
-            label = type_labels.get(type_id, "?")
-            ax.annotate(f"{label}\nbus {b}", pos[b],
-                        textcoords="offset points", xytext=(10, 8),
-                        fontsize=7, color=type_colors.get(type_id, "black"),
-                        fontweight="bold")
+        x, y = pos[bus]
+        n = len(types)
+        for i, tid in enumerate(types):
+            color = TYPE_COLORS.get(tid, "#7f8c8d")
+            size = 180 + (n - 1 - i) * 120
+            ax.scatter([x], [y], c=color, s=size, zorder=3 + i,
+                       edgecolors="black", linewidths=0.8)
+            y_offset = 8 + i * 14
+            ax.annotate(TYPE_LABELS[tid], (x, y),
+                        textcoords="offset points", xytext=(10, y_offset),
+                        fontsize=7, color=color, fontweight="bold")
+        ax.annotate(f"bus {bus}", (x, y),
+                    textcoords="offset points", xytext=(10, -6),
+                    fontsize=6, color="#555555")
 
-    # 母线编号标注（小字）
-    bus_labels = {b: str(b) for b in G.nodes()}
-    nx.draw_networkx_labels(G, pos, labels=bus_labels, ax=ax,
-                            font_size=6, font_color="#555555")
+    for b in pos:
+        if b not in bus_types and b != slack_bus:
+            ax.annotate(str(b), pos[b], textcoords="offset points",
+                        xytext=(0, -10), fontsize=5, ha="center",
+                        color="#777777")
 
-    # 图例
+    n_in_service = int(net.line["in_service"].sum())
+    n_tie = len(net.line) - n_in_service
+
     legend_elements = [
         Line2D([0], [0], marker='s', color='w', markerfacecolor='#2c3e50',
                markersize=10, label='Slack Bus'),
         Line2D([0], [0], marker='o', color='w', markerfacecolor='#95a5a6',
                markersize=8, label='Bus (no resource)'),
+        Line2D([0], [0], color='#bdc3c7', linewidth=1.2,
+               label=f'Branch ({n_in_service})'),
     ]
-    for type_id in sorted(resource_buses_by_type.keys()):
+    if n_tie > 0:
+        legend_elements.append(
+            Line2D([0], [0], color='#e74c3c', linewidth=1.0,
+                   linestyle='--', alpha=0.5,
+                   label=f'Tie switch, N.O. ({n_tie})'))
+    for tid in sorted(resource_buses_by_type.keys()):
         legend_elements.append(
             Line2D([0], [0], marker='o', color='w',
-                   markerfacecolor=type_colors[type_id],
-                   markersize=10, label=type_labels[type_id])
-        )
+                   markerfacecolor=TYPE_COLORS[tid],
+                   markersize=10, label=TYPE_LABELS[tid]))
     ax.legend(handles=legend_elements, loc="upper left", fontsize=9,
               framealpha=0.9)
 
     ax.set_title(f"Network Topology ({len(net.bus)} buses, "
-                 f"{len(net.line)} lines, "
-                 f"{len(resource_table)} resources)",
-                 fontsize=13)
+                 f"{n_in_service}+{n_tie} lines, "
+                 f"{len(resource_table)} resources)", fontsize=13)
     ax.axis("off")
-
     plt.tight_layout()
+
     topo_path = os.path.join(out_dir, "topology.png")
     plt.savefig(topo_path, dpi=150, bbox_inches="tight")
     plt.close()

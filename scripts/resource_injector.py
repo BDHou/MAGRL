@@ -56,9 +56,13 @@ class ResourceInjector:
     }
 
     # ----------------------------------------------------------------
-    # 默认参数 — 所有 P_max 均为标幺值 (p.u. of S_base)
+    # 默认参数 — P_max 为该类型所有设备的总渗透率 (p.u. of S_base)
     #
     # S_base = sum(net.load.p_mw)，即馈线总有功负荷。
+    # P_max 表示该类型所有设备的有功合计占总负荷的比例，
+    # 每台设备额定功率 = P_max / count。
+    # 这样改变设备数量时渗透率保持稳定。
+    #
     # 选用总负荷作为基准的理由：
     #   1. DER 渗透率的标准定义即为 P_DER / P_load_total
     #   2. 自动适配不同规模的网络（33-bus ~3.7MW vs 69-bus ~3.8MW
@@ -68,12 +72,13 @@ class ResourceInjector:
     # 各参数的工程依据：
     #
     # [PV/Inverter]
-    #   P_max = 0.08-0.30 p.u.  每台 PV 占总负荷 8-30%
-    #     3 台 * 0.20 = 0.60 p.u. -> 60% 渗透率（中等偏高）
+    #   P_max = 0.24-0.90 p.u.  所有 PV 总渗透率 24-90%
+    #     3 台时每台 0.08-0.30 p.u.（中等偏高渗透率）
     #   s_over_p = 1.10         IEEE 1547-2018 Cat B 逆变器过载比
     #
     # [BESS]
-    #   P_max = 0.03-0.13 p.u.  配储比约 PV 的 30-50%
+    #   P_max = 0.09-0.39 p.u.  所有 BESS 总渗透率，配储比约 PV 的 30-50%
+    #     3 台时每台 0.03-0.13 p.u.
     #   e_duration_h = 1.5-3.0  储能时长 (小时)
     #     C-rate = 1/e_duration_h, 即 0.33C-0.67C (商用锂电典型区间)
     #     E_max_MWh = P_max_MW * e_duration_h
@@ -81,12 +86,12 @@ class ResourceInjector:
     #     来源: NREL "Cost Projections for Utility-Scale Battery Storage"
     #
     # [Generator]
-    #   P_max = 0.03-0.13 p.u.  小型分布式柴油/燃气机组
+    #   P_max = 0.05-0.15 p.u.  所有发电机总渗透率
     #   s_over_p = 1.18          功率因数 pf=0.85 -> S/P = 1/0.85
     #
     # [Demand Response]
-    #   P_max = 0.005-0.03 p.u. 单台 DR 可调量占总负荷 0.5-3%
-    #     物理含义: 单节点负荷的 10-30% 可调 (FERC Order 2222)
+    #   P_max = 0.01-0.06 p.u.  所有 DR 总可调量
+    #     物理含义: 总负荷的 1-6% 可调 (FERC Order 2222)
     # ----------------------------------------------------------------
     DEFAULT_CONFIG: Dict[str, dict] = {
         "bess": {
@@ -94,7 +99,7 @@ class ResourceInjector:
             "bus_strategy": "farthest",
             "bus_list": None,
             "params": {
-                "P_max": (0.03, 0.13),
+                "P_max": (0.09, 0.39),
                 "e_duration_h": (1.5, 3.0),
                 "s_over_p": 1.0,
                 "eta": (0.92, 0.95),
@@ -105,7 +110,7 @@ class ResourceInjector:
             "bus_strategy": "random",
             "bus_list": None,
             "params": {
-                "P_max": (0.03, 0.13),
+                "P_max": (0.05, 0.15),
                 "s_over_p": 1.18,
                 "eta": 1.0,
             },
@@ -115,7 +120,7 @@ class ResourceInjector:
             "bus_strategy": "farthest",
             "bus_list": None,
             "params": {
-                "P_max": (0.08, 0.30),
+                "P_max": (0.24, 0.90),
                 "s_over_p": 1.10,
                 "eta": 1.0,
             },
@@ -125,7 +130,7 @@ class ResourceInjector:
             "bus_strategy": "random",
             "bus_list": None,
             "params": {
-                "P_max": (0.005, 0.03),
+                "P_max": (0.01, 0.06),
                 "eta": 1.0,
             },
         },
@@ -155,7 +160,7 @@ class ResourceInjector:
             net pp.pandapowerNet: 注入资源后的网络（原地修改）
             resource_table pd.DataFrame: 资源清单，列包含
                 [resource_id, type_id, type_name, bus, pp_element, pp_index,
-                 P_max_pu, P_max_mw, S_max_mw, E_max_mwh, eta]
+                 P_max_pu, P_max_mw, S_max_mw, Q_max_mvar, E_max_mwh, eta]
         """
         # 确定标幺基准
         if self._base_mva_override is not None:
@@ -195,7 +200,8 @@ class ResourceInjector:
             resource_table = pd.DataFrame(
                 columns=["resource_id", "type_id", "type_name", "bus",
                          "pp_element", "pp_index", "P_max_pu",
-                         "P_max_mw", "S_max_mw", "E_max_mwh", "eta"]
+                         "P_max_mw", "S_max_mw", "Q_max_mvar",
+                         "E_max_mwh", "eta"]
             )
 
         net._resource_table = resource_table
@@ -237,8 +243,11 @@ class ResourceInjector:
         records = []
         type_id = self.TYPE_BESS
         s_over_p = params.get("s_over_p", 1.0)
+
+        p_total_pu = self._sample_param(params["P_max"])
+        p_max_pu = p_total_pu / count
+
         for i, b in enumerate(buses):
-            p_max_pu = self._sample_param(params["P_max"])
             p_max_mw = p_max_pu * self.base_mva
             s_max_mw = p_max_mw * s_over_p
 
@@ -248,6 +257,8 @@ class ResourceInjector:
 
             eta_val = self._sample_param(params.get("eta"))
             eta = eta_val if eta_val is not None else 0.93
+
+            q_max_mvar = np.sqrt(max(s_max_mw**2 - p_max_mw**2, 0.0))
 
             name = f"BESS_T{type_id}_bus{b}"
             pp_idx = pp.create_storage(
@@ -264,6 +275,7 @@ class ResourceInjector:
                 "P_max_pu": p_max_pu,
                 "P_max_mw": p_max_mw,
                 "S_max_mw": s_max_mw,
+                "Q_max_mvar": q_max_mvar,
                 "E_max_mwh": e_max_mwh,
                 "eta": eta,
             })
@@ -291,13 +303,18 @@ class ResourceInjector:
         records = []
         type_id = self.TYPE_GENERATOR
         s_over_p = params.get("s_over_p", 1.18)
+
+        p_total_pu = self._sample_param(params["P_max"])
+        p_max_pu = p_total_pu / count
+
         for i, b in enumerate(buses):
-            p_max_pu = self._sample_param(params["P_max"])
             p_max_mw = p_max_pu * self.base_mva
             s_max_mw = p_max_mw * s_over_p
 
             eta_val = self._sample_param(params.get("eta"))
             eta = eta_val if eta_val is not None else 1.0
+
+            q_max_mvar = np.sqrt(max(s_max_mw**2 - p_max_mw**2, 0.0))
 
             name = f"Gen_T{type_id}_bus{b}"
             pp_idx = pp.create_sgen(
@@ -314,6 +331,7 @@ class ResourceInjector:
                 "P_max_pu": p_max_pu,
                 "P_max_mw": p_max_mw,
                 "S_max_mw": s_max_mw,
+                "Q_max_mvar": q_max_mvar,
                 "E_max_mwh": None,
                 "eta": eta,
             })
@@ -342,13 +360,18 @@ class ResourceInjector:
         records = []
         type_id = self.TYPE_INVERTER
         s_over_p = params.get("s_over_p", 1.10)
+
+        p_total_pu = self._sample_param(params["P_max"])
+        p_max_pu = p_total_pu / count
+
         for i, b in enumerate(buses):
-            p_max_pu = self._sample_param(params["P_max"])
             p_max_mw = p_max_pu * self.base_mva
             s_max_mw = p_max_mw * s_over_p
 
             eta_val = self._sample_param(params.get("eta"))
             eta = eta_val if eta_val is not None else 1.0
+
+            q_max_mvar = np.sqrt(max(s_max_mw**2 - p_max_mw**2, 0.0))
 
             name = f"PV_T{type_id}_bus{b}"
             pp_idx = pp.create_sgen(
@@ -365,6 +388,7 @@ class ResourceInjector:
                 "P_max_pu": p_max_pu,
                 "P_max_mw": p_max_mw,
                 "S_max_mw": s_max_mw,
+                "Q_max_mvar": q_max_mvar,
                 "E_max_mwh": None,
                 "eta": eta,
             })
@@ -391,8 +415,11 @@ class ResourceInjector:
 
         records = []
         type_id = self.TYPE_DEMAND_RESPONSE
+
+        p_total_pu = self._sample_param(params["P_max"])
+        p_max_pu = p_total_pu / count
+
         for i, b in enumerate(buses):
-            p_max_pu = self._sample_param(params["P_max"])
             p_max_mw = p_max_pu * self.base_mva
             s_max_mw = p_max_mw
 
@@ -413,6 +440,7 @@ class ResourceInjector:
                 "P_max_pu": p_max_pu,
                 "P_max_mw": p_max_mw,
                 "S_max_mw": s_max_mw,
+                "Q_max_mvar": None,
                 "E_max_mwh": None,
                 "eta": eta,
             })
@@ -565,9 +593,12 @@ class ResourceInjector:
                 buses = group["bus"].tolist()
                 p_total_pu = group["P_max_pu"].sum()
                 p_total_mw = group["P_max_mw"].sum()
+                q_vals = group["Q_max_mvar"].dropna()
+                q_info = f", Q_max_sum={q_vals.sum():.3f} Mvar" if len(q_vals) > 0 else ""
                 print(f"    [{type_name}] TypeID={type_id}, "
                       f"count={len(group)}, buses={buses}, "
-                      f"P_total={p_total_pu:.3f} p.u. ({p_total_mw:.3f} MW)")
+                      f"P_total={p_total_pu:.3f} p.u. ({p_total_mw:.3f} MW)"
+                      f"{q_info}")
         print(f"  net.storage: {len(net.storage)} 行")
         print(f"  net.sgen:    {len(net.sgen)} 行")
         print(f"  net.load:    {len(net.load)} 行")
@@ -588,14 +619,14 @@ if __name__ == "__main__":
     print(f"原始网络: {len(net.bus)} buses, {len(net.line)} lines, "
           f"{len(net.load)} loads, 总负荷 = {total_load:.3f} MW\n")
 
-    # 2. 定义资源配置（P_max 均为标幺值 p.u. of S_base）
+    # 2. 定义资源配置（P_max 为该类型所有设备的总渗透率 p.u. of S_base）
     config = {
         "bess": {
             "count": 3,
             "bus_strategy": "farthest",
             "params": {
-                "P_max": (0.04, 0.10),       # p.u., 每台 BESS 4-10% 总负荷
-                "e_duration_h": (1.5, 2.5),   # 1.5-2.5 小时储能时长
+                "P_max": (0.12, 0.30),        # 总渗透率 12-30%，3台每台 4-10%
+                "e_duration_h": (1.5, 2.5),
                 "eta": 0.93,
             },
         },
@@ -603,21 +634,21 @@ if __name__ == "__main__":
             "count": 1,
             "bus_strategy": "random",
             "params": {
-                "P_max": (0.04, 0.08),        # p.u., 4-8% 总负荷
+                "P_max": (0.04, 0.08),        # 总渗透率 4-8%，1台
             },
         },
         "inverter": {
             "count": 3,
             "bus_strategy": "farthest",
             "params": {
-                "P_max": (0.12, 0.25),        # p.u., 每台 PV 12-25% 总负荷
+                "P_max": (0.36, 0.75),        # 总渗透率 36-75%，3台每台 12-25%
             },
         },
         "demand_response": {
             "count": 2,
             "bus_strategy": "random",
             "params": {
-                "P_max": (0.008, 0.025),      # p.u., 0.8-2.5% 总负荷
+                "P_max": (0.016, 0.05),       # 总渗透率 1.6-5%，2台每台 0.8-2.5%
             },
         },
     }
@@ -629,7 +660,7 @@ if __name__ == "__main__":
     # 4. 查看资源清单
     print("\n资源清单 (resource_table):")
     cols = ["resource_id", "type_name", "bus", "P_max_pu",
-            "P_max_mw", "S_max_mw", "E_max_mwh", "eta"]
+            "P_max_mw", "S_max_mw", "Q_max_mvar", "E_max_mwh", "eta"]
     print(table[cols].to_string(index=False))
 
     # 5. 验证潮流

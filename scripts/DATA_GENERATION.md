@@ -44,12 +44,15 @@ data/generated/case33bw_b3p3g1d2/
 
 ## 标幺值系统
 
-所有资源容量参数 `P_max` 以标幺值 (p.u.) 表示:
+配置中的 `P_max` 为该类型所有设备的**总渗透率** (p.u. of S_base)，每台设备平均分配:
 
 ```
-S_base = sum(net.load.p_mw)   # 馈线总有功负荷
-P_max_mw = P_max_pu * S_base
+S_base = sum(net.load.p_mw)         # 馈线总有功负荷
+P_max_per_device_pu = P_max / count  # 均分到每台设备
+P_max_per_device_mw = P_max_per_device_pu * S_base
 ```
+
+这样做的好处: 改变设备数量时，该类型的总渗透率保持不变。
 
 选用总负荷作为基准的理由:
 - DER 渗透率的标准定义即 P_DER / P_load_total
@@ -58,7 +61,7 @@ P_max_mw = P_max_pu * S_base
 BESS 的容量 E_max 通过储能时长 `e_duration_h` 定义:
 
 ```
-E_max_mwh = P_max_mw * e_duration_h
+E_max_mwh = P_max_per_device_mw * e_duration_h
 C-rate = 1 / e_duration_h
 ```
 
@@ -67,42 +70,66 @@ C-rate = 1 / e_duration_h
 以 IEEE 33-bus (12.66kV, S_base = 3.715 MW) 为例:
 
 ### PV/Inverter
-- `P_max`: 0.08-0.30 p.u. (0.30-1.11 MW/台)
+- `P_max`: 0.24-0.90 p.u. (总渗透率 24-90%)
 - `s_over_p`: 1.10 (IEEE 1547-2018 Cat B)
-- 3 台总渗透率: 24-90%
+- 3 台时每台 0.08-0.30 p.u. (0.30-1.11 MW/台)
 - 依据: IEC 61727, IEEE 1547
 
 ### BESS
-- `P_max`: 0.03-0.13 p.u. (0.11-0.48 MW/台)
+- `P_max`: 0.09-0.39 p.u. (总渗透率 9-39%，配储比约 PV 的 30-50%)
+- 3 台时每台 0.03-0.13 p.u. (0.11-0.48 MW/台)
 - `e_duration_h`: 1.5-3.0 小时 (C-rate 0.33-0.67C)
 - `eta`: 0.92-0.95 (锂电单程效率, round-trip 85-90%)
 - 依据: NREL "Cost Projections for Utility-Scale Battery Storage"
 
 ### Generator
-- `P_max`: 0.03-0.13 p.u. (0.11-0.48 MW/台)
+- `P_max`: 0.05-0.15 p.u. (总渗透率 5-15%)
 - `s_over_p`: 1.18 (功率因数 pf=0.85)
 - 依据: IEEE 1547 Category III
 
 ### Demand Response
-- `P_max`: 0.005-0.03 p.u. (0.019-0.11 MW/台)
-- 物理含义: 单节点负荷的 10-30% 可调
+- `P_max`: 0.01-0.06 p.u. (总可调量占总负荷 1-6%)
+- 物理含义: 总负荷的 1-6% 可调
 - 依据: FERC Order 2222
 
 ## resource_table.csv 字段说明
 
-| 列名 | 类型 | 说明 |
-|------|------|------|
-| resource_id | int | 全局资源编号 (0, 1, 2, ...) |
-| type_id | int | TypeID (0/1/2/3) |
-| type_name | str | 类型名 (bess/generator/inverter/demand_response) |
-| bus | int | 母线编号 |
-| pp_element | str | pandapower 表名 (storage/sgen/load) |
-| pp_index | int | 在对应 PP 表中的行索引 |
-| P_max_pu | float | 额定有功功率 (p.u. of S_base) |
-| P_max_mw | float | 额定有功功率 (MW) |
-| S_max_mw | float | 额定视在功率 (MVA) |
-| E_max_mwh | float | 额定电量 (MWh)，仅 BESS 有效 |
-| eta | float | 效率 (单程), 仅 BESS 有效 |
+| 列名 | 类型 | 适用设备 | 说明 |
+|------|------|---------|------|
+| resource_id | int | 全部 | 全局资源编号 (0, 1, 2, ...)，即 RL agent 索引 |
+| type_id | int | 全部 | TypeID (0=BESS, 1=Generator, 2=Inverter, 3=DR) |
+| type_name | str | 全部 | 类型名 (bess/generator/inverter/demand_response) |
+| bus | int | 全部 | 该设备所接入的母线编号 |
+| pp_element | str | 全部 | pandapower 元件表名 (storage/sgen/load) |
+| pp_index | int | 全部 | 该设备在对应 PP 元件表中的行索引，用于读写潮流结果 |
+| P_max_pu | float | 全部 | 额定有功功率的标幺值 (p.u. of S_base) |
+| P_max_mw | float | 全部 | 额定有功功率 (MW) = P_max_pu * S_base |
+| S_max_mw | float | 全部 | 额定视在功率 (MVA) = P_max_mw * s_over_p；逆变器类设备的容量上限 |
+| Q_max_mvar | float | BESS/Gen/Inv | 额定有功下的最大无功能力 (Mvar) = sqrt(S_max^2 - P_max^2)；DR 为空 |
+| E_max_mwh | float | BESS | 额定储能容量 (MWh) = P_max_mw * e_duration_h；非储能设备为空 |
+| eta | float | BESS | 充放电单程效率 (0-1)；其他设备记录为 1.0 |
+
+### Q_max_mvar 的含义
+
+`Q_max_mvar` 是设备**在额定有功出力 P_max 下**还能提供的最大无功功率：
+
+```
+Q_max_mvar = sqrt(S_max_mw^2 - P_max_mw^2)
+```
+
+这不是一个独立配置参数，而是由 `s_over_p` 决定的派生量：
+- `s_over_p = 1.0` 时，S_max = P_max，Q_max = 0（额定功率下无 Q 余量）
+- `s_over_p = 1.10` 时（逆变器默认），Q_max = P_max * sqrt(1.10^2 - 1) = 0.458 * P_max
+- `s_over_p = 1.18` 时（发电机默认），Q_max = P_max * sqrt(1.18^2 - 1) = 0.624 * P_max
+
+运行时的瞬时 Q 上限取决于当前 P 出力：`Q_avail(t) = sqrt(S_max^2 - P(t)^2)`。
+当 P(t) < P_max 时，可用 Q 更大；当 P=0 时，Q_avail = S_max。
+
+各设备 Q 能力说明：
+- **Inverter/PV**: Q 完全可调，是 Volt-Var 控制的核心手段（IEEE 1547-2018 Cat B）
+- **Generator**: 同步发电机 Q 可调，受 S 额定和 PF 限制
+- **BESS**: PCS 逆变器可出 Q，默认 s_over_p=1.0（需调大才有 Q 余量）
+- **DR**: 纯有功调节，不涉及 Q
 
 ## 配置覆盖
 
