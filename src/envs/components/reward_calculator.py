@@ -12,6 +12,7 @@ class RewardCalculator:
     Sub-rewards:
       R_reverse: 倒送惩罚（二次） — 核心目标            (全局)
       R_buy:     购电惩罚（线性） — 鼓励放电            (全局)
+      R_voltage: 电压偏离惩罚（均方） — 电压质量         (全局)
       R_soc_i:   SOC 越界软惩罚  — 安全约束             (局部)
       R_action_i:动作平滑惩罚    — 避免激进控制          (局部)
 
@@ -23,6 +24,7 @@ class RewardCalculator:
     DEFAULT_WEIGHTS = {
         "w_reverse": 2.0,
         "w_buy": 1.0,
+        "w_voltage": 0.5,
         "w_soc": 5.0,
         "w_action": 0.01,
     }
@@ -33,6 +35,7 @@ class RewardCalculator:
         self.w2 = config.get("w_buy", self.DEFAULT_WEIGHTS["w_buy"])
         self.w3 = config.get("w_soc", self.DEFAULT_WEIGHTS["w_soc"])
         self.w4 = config.get("w_action", self.DEFAULT_WEIGHTS["w_action"])
+        self.w5 = config.get("w_voltage", self.DEFAULT_WEIGHTS["w_voltage"])
 
     def calculate(self, simulator, soc_values: np.ndarray, p_bat_values: list[float]) -> dict:
         """
@@ -48,6 +51,7 @@ class RewardCalculator:
               - per_agent_rewards: list[float], 每个智能体各自的总奖励
               - reward_reverse:    float, 全局倒送惩罚 (共享)
               - reward_buy:        float, 全局购电惩罚 (共享)
+              - reward_voltage:    float, 全局电压偏离惩罚 (共享)
               - reward_soc:        list[float], 各智能体的 SOC 惩罚
               - reward_action:     list[float], 各智能体的动作惩罚
               - p_grid_actual:     float, PCC 实际功率
@@ -65,8 +69,12 @@ class RewardCalculator:
         # R_buy: p_grid > 0 说明买电，线性惩罚
         r_buy = -(max(0.0, p_grid))
 
+        # R_voltage: 所有母线电压偏离 1.0 p.u. 的均方惩罚
+        vm = simulator.get_bus_voltages()
+        r_voltage = -float(np.mean((vm - 1.0) ** 2))
+
         # 全局部分的加权和（所有智能体共享同一个值）
-        global_reward = self.w1 * r_reverse + self.w2 * r_buy
+        global_reward = self.w1 * r_reverse + self.w2 * r_buy + self.w5 * r_voltage
 
         # ============================================================
         # 局部独立分量（每个智能体各自计算）
@@ -98,6 +106,7 @@ class RewardCalculator:
             "per_agent_rewards": per_agent_rewards,
             "reward_reverse": r_reverse,
             "reward_buy": r_buy,
+            "reward_voltage": r_voltage,
             "reward_soc": reward_soc_list,
             "reward_action": reward_action_list,
             "p_grid_actual": p_grid,

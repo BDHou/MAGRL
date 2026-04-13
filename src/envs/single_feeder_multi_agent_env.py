@@ -129,6 +129,7 @@ class MultiFeederStorageEnv(MultiAgentEnv):
             reward_info = {
                 "per_agent_rewards": [-100.0] * num_agents,
                 "reward_reverse": 0.0, "reward_buy": 0.0,
+                "reward_voltage": 0.0,
                 "reward_soc": [0.0] * num_agents,
                 "reward_action": [0.0] * num_agents,
                 "p_grid_actual": 0.0,
@@ -167,6 +168,7 @@ class MultiFeederStorageEnv(MultiAgentEnv):
             info_dict[agent_id] = {
                 "reward_reverse": reward_info["reward_reverse"],
                 "reward_buy": reward_info["reward_buy"],
+                "reward_voltage": reward_info["reward_voltage"],
                 "reward_soc": reward_info["reward_soc"][idx],
                 "reward_action": reward_info["reward_action"][idx],
                 "p_grid_actual": reward_info["p_grid_actual"],

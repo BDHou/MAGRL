@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 from src.envs.single_feeder_multi_agent_env import MultiFeederStorageEnv
 
 # Reward component keys (shared across functions)
-REWARD_KEYS = ["reward_reverse", "reward_buy", "reward_soc", "reward_action"]
+REWARD_KEYS = ["reward_reverse", "reward_buy", "reward_voltage", "reward_soc", "reward_action"]
 
 
 def _make_empty_records(env):
@@ -36,6 +36,7 @@ def _make_empty_records(env):
         "p_ext_grid": [],
         "vm_min": [],
         "vm_max": [],
+        "vm_deviation": [],
         "storage_p": {aid: [] for aid in env.possible_agents},
     }
 
@@ -54,6 +55,7 @@ def _record_step(records, env, step, reward_dict, info_dict, action_dict):
     first_info = info_dict.get(first_agent, {})
     records["reward_reverse"].append(first_info.get("reward_reverse", 0.0))
     records["reward_buy"].append(first_info.get("reward_buy", 0.0))
+    records["reward_voltage"].append(first_info.get("reward_voltage", 0.0))
 
     # SOC 和 action 惩罚：取所有 agent 的均值
     soc_penalties = [info_dict.get(aid, {}).get("reward_soc", 0.0) for aid in env.possible_agents]
@@ -69,6 +71,7 @@ def _record_step(records, env, step, reward_dict, info_dict, action_dict):
     vm = env.simulator.get_bus_voltages()
     records["vm_min"].append(float(np.min(vm)))
     records["vm_max"].append(float(np.max(vm)))
+    records["vm_deviation"].append(float(np.mean((vm - 1.0) ** 2)))
 
     for aid in env.possible_agents:
         idx = env._agent_to_idx[aid]
@@ -222,8 +225,10 @@ def plot_evaluation(records: dict, baseline: dict = None, figsize=(16, 18)):
 
     # ---- Panel 5: Decomposed rewards ----
     ax5 = axes[4]
-    colors = {'reward_reverse': 'red', 'reward_buy': 'orange', 'reward_soc': 'blue', 'reward_action': 'gray'}
-    labels = {'reward_reverse': 'R_reverse', 'reward_buy': 'R_buy', 'reward_soc': 'R_soc (mean)', 'reward_action': 'R_action (mean)'}
+    colors = {'reward_reverse': 'red', 'reward_buy': 'orange', 'reward_voltage': 'green',
+              'reward_soc': 'blue', 'reward_action': 'gray'}
+    labels = {'reward_reverse': 'R_reverse', 'reward_buy': 'R_buy', 'reward_voltage': 'R_voltage',
+              'reward_soc': 'R_soc (mean)', 'reward_action': 'R_action (mean)'}
     for k in REWARD_KEYS:
         ax5.plot(hours, records[k], label=labels[k], linewidth=1.2, color=colors[k])
     ax5.set_ylabel('Reward Component')
@@ -273,6 +278,10 @@ if __name__ == "__main__":
 
     print("\n--- Running RL policy ---")
     records = evaluate_episode(algo, env_config)
+
+    # 统计摘要
+    from src.eval_stats import print_episode_summary
+    print_episode_summary(records, baseline=baseline)
 
     # 绘图
     fig = plot_evaluation(records, baseline=baseline)
