@@ -24,7 +24,7 @@
 set -e
 
 FEEDER=${1:-case33bw}
-DAYS=${2:-30}
+DAYS=${2:-1}
 INTERVAL_MIN=${3:-15}
 N_BESS=${4:-3}
 N_PV=${5:-3}

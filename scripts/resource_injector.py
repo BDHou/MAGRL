@@ -71,14 +71,16 @@ class ResourceInjector:
     #
     # 各参数的工程依据：
     #
-    # [PV/Inverter]
-    #   P_max = 0.24-0.90 p.u.  所有 PV 总渗透率 24-90%
-    #     3 台时每台 0.08-0.30 p.u.（中等偏高渗透率）
+    # [PV/Inverter] — 高渗透率场景
+    #   P_max = 1.20-3.20 p.u.  所有 PV 总渗透率 120-320%
+    #     等效于老代码每台 1.5-4.0 MW，3台总计 4.5-12.0 MW
+    #     对 case33bw (3.715 MW): 单台 0.40-1.07 p.u.
+    #     高渗透率下白天必然出现功率倒送，适合训练 Volt-Var 控制
     #   s_over_p = 1.10         IEEE 1547-2018 Cat B 逆变器过载比
     #
     # [BESS]
-    #   P_max = 0.09-0.39 p.u.  所有 BESS 总渗透率，配储比约 PV 的 30-50%
-    #     3 台时每台 0.03-0.13 p.u.
+    #   P_max = 0.30-1.00 p.u.  所有 BESS 总渗透率，配储比约 PV 的 25-30%
+    #     3 台时每台 0.10-0.33 p.u.
     #   e_duration_h = 1.5-3.0  储能时长 (小时)
     #     C-rate = 1/e_duration_h, 即 0.33C-0.67C (商用锂电典型区间)
     #     E_max_MWh = P_max_MW * e_duration_h
@@ -99,7 +101,7 @@ class ResourceInjector:
             "bus_strategy": "farthest",
             "bus_list": None,
             "params": {
-                "P_max": (0.09, 0.39),
+                "P_max": (0.30, 1.00),
                 "e_duration_h": (1.5, 3.0),
                 "s_over_p": 1.0,
                 "eta": (0.92, 0.95),
@@ -120,7 +122,7 @@ class ResourceInjector:
             "bus_strategy": "farthest",
             "bus_list": None,
             "params": {
-                "P_max": (0.24, 0.90),
+                "P_max": (1.20, 3.20),
                 "s_over_p": 1.10,
                 "eta": 1.0,
             },
@@ -625,7 +627,7 @@ if __name__ == "__main__":
             "count": 3,
             "bus_strategy": "farthest",
             "params": {
-                "P_max": (0.12, 0.30),        # 总渗透率 12-30%，3台每台 4-10%
+                "P_max": (0.30, 1.00),        # 总渗透率 30-100%
                 "e_duration_h": (1.5, 2.5),
                 "eta": 0.93,
             },
@@ -634,21 +636,21 @@ if __name__ == "__main__":
             "count": 1,
             "bus_strategy": "random",
             "params": {
-                "P_max": (0.04, 0.08),        # 总渗透率 4-8%，1台
+                "P_max": (0.05, 0.15),        # 总渗透率 5-15%
             },
         },
         "inverter": {
             "count": 3,
             "bus_strategy": "farthest",
             "params": {
-                "P_max": (0.36, 0.75),        # 总渗透率 36-75%，3台每台 12-25%
+                "P_max": (1.20, 3.20),        # 总渗透率 120-320% (高渗透率)
             },
         },
         "demand_response": {
             "count": 2,
             "bus_strategy": "random",
             "params": {
-                "P_max": (0.016, 0.05),       # 总渗透率 1.6-5%，2台每台 0.8-2.5%
+                "P_max": (0.01, 0.06),        # 总渗透率 1-6%
             },
         },
     }
